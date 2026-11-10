@@ -51,6 +51,27 @@ try {
 } catch (e) {}
 """
 
+def remove_blocking_modals(page):
+    """移除页面上可能遮挡按钮的 Cookie 隐私弹窗（如 #ncmp__tool）"""
+    try:
+        page.evaluate("""
+            () => {
+                const selectors = [
+                    '#ncmp__tool',
+                    '.ncmp__banner-inner',
+                    '[id^="ncmp__"]',
+                    '.fc-consent-root',
+                    '#qc-cmp2-container',
+                    '.cc-window'
+                ];
+                for (const sel of selectors) {
+                    document.querySelectorAll(sel).forEach(el => el.remove());
+                }
+            }
+        """)
+    except Exception:
+        pass
+
 def get_current_ip(proxy_server=None):
     """获取当前出口IP"""
     proxies = {"http": proxy_server, "https": proxy_server} if (proxy_server and IS_PROXY) else None
@@ -64,7 +85,7 @@ def get_current_ip(proxy_server=None):
         log(f"❌ 获取出口IP失败: {e}")
         return "获取失败"
 
-def send_telegram_notification(status, old_due, new_due, current_ip="未知"):
+def send_telegram_notification(status, old_due="未知", new_due="未知", current_ip="未知"):
     """发送 Telegram 通知"""
     if not TG_BOT_TOKEN or not TG_CHAT_ID:
         log("⚠️ Telegram 未配置，跳过通知")
@@ -556,99 +577,6 @@ def login(page):
     page.screenshot(path="login_fail.png")
     return False
 
-    # ---------- 【已弃用】以下为旧的 Cookie / 账号密码登录，会话无法续期，仅留档 ----------
-    #
-    # # Cookie 登录尝试
-    # if COOKIE_VALUE:
-    #     log("📇 尝试 Cookie 登录...")
-    #     try:
-    #         page.context.add_cookies([{
-    #             'name': 'remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d',
-    #             'value': COOKIE_VALUE,
-    #             'domain': 'dash.hidencloud.com',
-    #             'path': '/',
-    #             'expires': int(time.time()) + 3600 * 24 * 365,
-    #             'httpOnly': True,
-    #             'secure': True,
-    #             'sameSite': 'Lax'
-    #         }])
-    #         page.goto(f"{BASE_URL}/dashboard", wait_until="domcontentloaded", timeout=60000)
-    #         handle_cloudflare(page, timeout=240)
-    #         time.sleep(2)
-    #         handle_cloudflare(page, timeout=60)  # 跳转后可能再次出现验证页
-    #         if _is_logged_in(page, strict=True):
-    #             log(f"✅ Cookie 登录成功！当前已到达dashboard页面")
-    #             return True
-    #         log("❌ Cookie 失效，请更换")
-    #     except Exception as e:
-    #         log(f"⚠️ Cookie 登录尝试异常: {e}")
-    #
-    # # 账号密码登录
-    # if not EMAIL or not PASSWORD:
-    #     return False
-    # log("💣 尝试账号密码登录...")
-    # try:
-    #     page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=60000)
-    #     handle_cloudflare(page, timeout=240)
-    #     time.sleep(8) # 等页面完全加载
-    #     log("⌨️ 输入账号密码...")
-    #     # 真实表单字段：input[name="username"]（可填邮箱或用户名）/ input[name="password"]
-    #     user_input = page.locator('input[name="username"], input[name="email"], input[type="email"]').first
-    #     pwd_input = page.locator('input[name="password"], input[type="password"]').first
-    #     try:
-    #         user_input.wait_for(state="visible", timeout=30000)
-    #     except Exception:
-    #         handle_cloudflare(page, timeout=120)
-    #         user_input.wait_for(state="visible", timeout=30000)
-    #     user_input.fill(EMAIL, timeout=10000)
-    #     pwd_input.fill(PASSWORD, timeout=10000)
-    #     time.sleep(0.5)
-    #     handle_cloudflare(page, timeout=60)
-    #
-    #     # 登录表单自带 Turnstile，提交前先等它的 token
-    #     if not solve_modal_turnstile(page, timeout=90):
-    #         log("⚠️ 登录表单的 Turnstile 未确认通过，仍将尝试提交...")
-    #
-    #     log("🖱️ 点击登录按钮提交...")
-    #     time.sleep(3) # 等Turnstile完全通过
-    #     try:
-    #         page.click('button[type="submit"]', timeout=10000)
-    #     except Exception:
-    #         page.locator('button:has-text("Sign in"), button:has-text("登录")').first.click(timeout=10000)
-    #     time.sleep(3)
-    #     handle_cloudflare(page, timeout=240)
-    #     nav_start = time.time()
-    #     navigated = False
-    #     while time.time() - nav_start < 120:
-    #         try:
-    #             if "/auth/login" not in page.url and not _is_security_check_page(page):
-    #                 navigated = True
-    #                 break
-    #             if _is_security_check_page(page) or _has_interstitial_iframe(page):
-    #                 handle_cloudflare(page, timeout=60)
-    #         except Exception:
-    #             pass
-    #         time.sleep(1)
-    #     if not navigated:
-    #         log("❌ 登录提交后未能完成跳转。")
-    #         page.screenshot(path="login_fail.png")
-    #         return False
-    #     page.goto(f"{BASE_URL}/dashboard", wait_until="domcontentloaded", timeout=60000)
-    #     handle_cloudflare(page, timeout=120)
-    #     page_title = page.title()
-    #     log(f"📝 当前Title: {page_title}")
-    #     if not _is_logged_in(page, strict=True):
-    #         log("❌ 登录失败。")
-    #         status = "❌ 登录失败"
-    #         send_telegram_notification(status)  # 发送 Telegram 通知
-    #         return False
-    #     log(f"✅ 账号密码登录成功！当前已到达dashboard页面")
-    #     return True
-    # except Exception as e:
-    #     log(f"❌ 登录异常: {e}")
-    #     page.screenshot(path="login_fail.png")
-    #     return False
-
 def get_server_id(page):
     try:
         if 'dash.hidencloud.com' not in page.url:
@@ -706,7 +634,6 @@ def get_due_date(page):
     return "未知"
 
 def renew_service(page):
-
     try:
         log("➡ 进入续期流程...")
         for renew_round in range(3):
@@ -716,16 +643,22 @@ def renew_service(page):
                 page.goto(SERVICE_URL, wait_until="domcontentloaded", timeout=60000)
             handle_cloudflare(page)
             time.sleep(12) # 等待续期页面完全加载,未完全加载无法点击
+            remove_blocking_modals(page)
             log("🖱️ 准备点击 Renew 按钮...")
             renew_btn = page.locator('button:has-text("Renew")')
             create_btn = page.locator('button:has-text("Create Invoice")')
             modal_opened = False
             for i in range(6):
                 try:
+                    remove_blocking_modals(page)
                     renew_btn.wait_for(state="visible", timeout=10000)
                     renew_btn.scroll_into_view_if_needed()
                     log(f"🖱️ 第 {i+1} 次尝试点击 Renew...")
-                    renew_btn.click()
+                    try:
+                        renew_btn.click(timeout=5000)
+                    except Exception:
+                        remove_blocking_modals(page)
+                        renew_btn.click(force=True, timeout=5000)
                     time.sleep(3) # 等待一小段时间，检测是否出现“未到续期时间”弹窗
                     page_text = page.locator("body").inner_text()
                     if "Renewal Restricted" in page_text or "can only renew" in page_text.lower():
@@ -764,8 +697,17 @@ def renew_service(page):
             for attempt in range(6):
                 log(f"🖱️ 点击 Create Invoice（第 {attempt + 1} 次）...")
                 try:
+                    remove_blocking_modals(page)
                     create_btn.wait_for(state="visible", timeout=30000)
-                    create_btn.click(timeout=20000)
+                    try:
+                        create_btn.click(timeout=8000)
+                    except Exception:
+                        log("⚠️ 常规点击被拦截，尝试移除弹窗并强制点击...")
+                        remove_blocking_modals(page)
+                        try:
+                            create_btn.click(force=True, timeout=8000)
+                        except Exception:
+                            create_btn.evaluate("el => el.click()")
                 except Exception as e:
                     log(f"⚠️ 点击 Create Invoice 失败: {e}")
                     solve_modal_turnstile(page, timeout=45)
@@ -819,9 +761,14 @@ def renew_service(page):
         handle_cloudflare(page)
 
         log("🔎 查找 Pay 按钮...")
+        remove_blocking_modals(page)
         pay_btn = page.locator('a:has-text("Pay"):visible, button:has-text("Pay"):visible').first
         pay_btn.wait_for(state="visible", timeout=30000)
-        pay_btn.click()
+        try:
+            pay_btn.click(timeout=10000)
+        except Exception:
+            remove_blocking_modals(page)
+            pay_btn.click(force=True)
         log("✅ Pay 按钮已点击")
         time.sleep(6) # 等待支付确认页面或跳转回服务页
         page.goto(SERVICE_URL, wait_until="domcontentloaded", timeout=60000) # 返回服务管理页面以获取新的到期时间
